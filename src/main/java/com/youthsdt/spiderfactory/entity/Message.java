@@ -1,4 +1,4 @@
-package com.demo.spiderfactory.entity;
+package com.youthsdt.spiderfactory.entity;
 
 /**
  * @author xiangjing
