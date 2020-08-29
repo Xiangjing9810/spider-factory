@@ -1,7 +1,6 @@
 package com.youthsdt.spiderfactory.kafka;
 
 import com.alibaba.fastjson.JSONObject;
-import com.youthsdt.spiderfactory.entity.Message;
 import com.youthsdt.spiderfactory.entity.RetResult;
 import com.youthsdt.spiderfactory.util.RedisUtil;
 import com.youthsdt.spiderfactory.util.UUIDUtils;
