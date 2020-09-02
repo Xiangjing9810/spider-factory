@@ -12,3 +12,4 @@ public class UUIDUtils {
         return UUID.randomUUID().toString().replace("-", "");
     }
 }
+

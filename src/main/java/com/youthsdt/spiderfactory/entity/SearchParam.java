@@ -13,6 +13,19 @@ public class SearchParam {
     private String id;
     private String sort;
     private String sortType;
+    private String title;
+    private String content;
+    private Integer size;
+    private Integer page;
+
+    public Integer getPage() {
+        return page;
+    }
+
+    public void setPage(Integer page) {
+        this.page = page;
+    }
+
 
     public String getTitle() {
         return title;
@@ -30,8 +43,6 @@ public class SearchParam {
         this.content = content;
     }
 
-    private String title;
-    private String content;
 
     public Integer getSize() {
         return size;
@@ -41,7 +52,6 @@ public class SearchParam {
         this.size = size;
     }
 
-    private Integer size;
 
     public String getIndex() {
         return index;

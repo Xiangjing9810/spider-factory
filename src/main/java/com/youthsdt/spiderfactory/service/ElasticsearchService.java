@@ -1,18 +1,32 @@
 package com.youthsdt.spiderfactory.service;
 
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.youthsdt.spiderfactory.entity.SearchParam;
-import org.apache.http.util.EntityUtils;
 import org.apache.log4j.Logger;
-import org.elasticsearch.client.Request;
-import org.elasticsearch.client.Response;
-import org.elasticsearch.client.RestClient;
+import org.elasticsearch.action.search.SearchRequest;
+import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.client.*;
+import org.elasticsearch.common.text.Text;
+import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.SearchHits;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
+import org.elasticsearch.search.fetch.subphase.highlight.HighlightField;
+import org.elasticsearch.search.sort.FieldSortBuilder;
+import org.elasticsearch.search.sort.SortBuilders;
+import org.elasticsearch.search.sort.SortOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 /**
  * @author xiangjing
@@ -25,107 +39,96 @@ public class ElasticsearchService {
 
     @Qualifier("EsRestClient")
     @Autowired
-    private RestClient client;
+    private RestHighLevelClient client;
     private static Logger logger = Logger.getLogger(ElasticsearchService.class);
 
-    /**
-     * 根据id查询文档内容
-     *
-     * @param param
-     * @return
-     */
-    public JSONObject getDataById(SearchParam param) {
-        //拼接查询内容
-        String url = "/" + param.getIndex() + "/" + param.getType() + "/" + param.getId();
-        Request request = new Request("GET", url);
-        JSONObject jsonObject = new JSONObject();
-        try {
-            Response response = client.performRequest(request);
-            String responseBody = EntityUtils.toString(response.getEntity(), "UTF-8");
-            JSONObject json = JSONObject.parseObject(responseBody);
-            //获取我们需要的内容
-            Object source = json.get("_source");
-            jsonObject = JSONObject.parseObject(source.toString());
-        } catch (IOException e) {
-            logger.error(e.getMessage());
-        }
-        return jsonObject;
-    }
 
-    public JSONArray getDataList(SearchParam searchParam) {
-        //拼接查询内容
-        String url = "/" + searchParam.getIndex() + "/_search";
-        String body = "{\"query\": {\"match_all\": {}},\"size\": " + searchParam.getSize() + ",\"sort\": [{\"" + searchParam.getSort() + "\": {\"order\": \"" + searchParam.getSortType() + "\"}}]}";
-        String responseBody = executeRequest(url, body);
-        JSONObject json = JSONObject.parseObject(responseBody);
-        //获取我们需要的内容
-        JSONArray array = json.getJSONObject("hits").getJSONArray("hits");
-        return formatJson(array);
-    }
-
-    public JSONArray search(SearchParam searchParam) {
-        //拼接查询内容
-        String url = "/" + searchParam.getIndex() + "/_search";
-        StringBuffer qurryStr = new StringBuffer("{\"_source\": [\"title\",\"publish_time\" ,\"source_url\",\"publishdate\",\"source_name\",\"author\"],");
-        qurryStr.append("\"query\": {\"match_phrase\": {\"content\":\"").append(searchParam.getContent()).append("\"}},\"highlight\": {\"fields\": {\"content\": {}}},\"size\": ").append(searchParam.getSize()).append(",\"sort\": [{\"").append(searchParam.getSort()).append("\": {\"order\": \"").append(searchParam.getSortType()).append("\"}}]}");
-        String responseBody = executeRequest(url, qurryStr.toString());
-        JSONObject json = JSONObject.parseObject(responseBody);
-        //获取我们需要的内容
-        JSONArray array = json.getJSONObject("hits").getJSONArray("hits");
-
-        return formatJson2(array);
-    }
-
-    private String executeRequest(String url, String body) {
-        Request request = new Request("GET", url);
-        request.setJsonEntity(body);
-        try {
-            Response response = client.performRequest(request);
-            return EntityUtils.toString(response.getEntity(), "UTF-8");
-        } catch (IOException e) {
-            logger.error(e.getMessage());
-            return null;
-        }
-    }
-
-    private JSONArray formatJson(JSONArray array) {
-        for (Object item : array) {
-            JSONObject object = (JSONObject) item;
-            object.remove("sort");
-            object.remove("_index");
-            object.remove("_score");
-            object.remove("_type");
-            object.remove("_id");
-            String content = object.getJSONObject("_source").getString("content");
-            if (content.length() > 199) {
-                content = content.substring(0, 199) + "...";
+    public JSONObject getDataList(SearchParam searchParam) throws IOException {
+        SearchRequest searchRequest = new SearchRequest(searchParam.getIndex());
+        searchRequest.types(searchParam.getType());
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.query(QueryBuilders.matchAllQuery());
+        //分页查询，设置起始下标，从0开始
+        searchSourceBuilder.from(0);
+        //每页显示个数
+        searchSourceBuilder.size(searchParam.getSize());
+        //source源字段过虑
+        String[] fields = {"article_public_id", "websitelogo", "es_index", "spider_time", "es_type", "contenthtml"};
+        searchSourceBuilder.fetchSource(new String[]{}, fields);
+        // 排序
+        FieldSortBuilder fsb = SortBuilders.fieldSort("spider_time");
+        fsb.order(SortOrder.DESC);
+        searchSourceBuilder.sort(fsb);
+        searchRequest.source(searchSourceBuilder);
+        SearchResponse search = client.search(searchRequest, RequestOptions.DEFAULT);
+        SearchHits hits = search.getHits();
+        long totalHits = hits.getTotalHits();
+        JSONObject res = new JSONObject();
+        JSONArray array = new JSONArray();
+        res.put("total", totalHits);
+        for (SearchHit searchHit : hits.getHits()) {
+            Map json = searchHit.getSourceAsMap();
+            JSONObject item = new JSONObject(json);
+            if (item.getString("content").length() > 199) {
+                item.put("content", item.getString("content").substring(0, 199) + "...");
             }
-            object.getJSONObject("_source").put("content", content);
+            array.add(item);
         }
-        return array;
+        res.put("data", array);
+        return res;
+
     }
 
-    private JSONArray formatJson2(JSONArray array) {
-        for (Object item : array) {
-            JSONObject object = (JSONObject) item;
-            object.remove("sort");
-            object.remove("_index");
-            object.remove("_score");
-            object.remove("_type");
-            object.remove("_id");
-            StringBuffer content = new StringBuffer();
-            JSONArray jsonArray = object.getJSONObject("highlight").getJSONArray("content");
-            for (Object highlight : jsonArray) {
-                content.append(highlight);
+
+    public JSONObject search(SearchParam searchParam) throws IOException {
+        SearchRequest searchRequest = new SearchRequest(searchParam.getIndex());
+        searchRequest.types(searchParam.getType());
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.query(QueryBuilders.matchPhraseQuery("content", searchParam.getContent()));
+        HighlightBuilder highlightBuilder = new HighlightBuilder();
+        highlightBuilder.preTags("<em>");//设置前缀
+        highlightBuilder.postTags("</em>");//设置后缀
+        highlightBuilder.field("content");
+        searchSourceBuilder.highlighter(highlightBuilder);
+
+        //分页查询，设置起始下标，从0开始
+        searchSourceBuilder.from((searchParam.getPage() - 1) * searchParam.getSize());
+        //每页显示个数
+        searchSourceBuilder.size(searchParam.getSize());
+        //source源字段过虑
+        String[] fields = {"article_public_id", "websitelogo", "es_index", "spider_time", "es_type", "contenthtml"};
+        searchSourceBuilder.fetchSource(new String[]{}, fields);
+        // 排序
+        FieldSortBuilder fsb = SortBuilders.fieldSort("spider_time");
+        fsb.order(SortOrder.DESC);
+        searchSourceBuilder.sort(fsb);
+        searchRequest.source(searchSourceBuilder);
+        SearchResponse search = client.search(searchRequest, RequestOptions.DEFAULT);
+        SearchHits hits = search.getHits();
+        long totalHits = hits.getTotalHits();
+        JSONObject res = new JSONObject();
+        JSONArray array = new JSONArray();
+        res.put("total", totalHits);
+        res.put("currentPage", searchParam.getPage());
+        for (SearchHit searchHit : hits.getHits()) {
+            Map json = searchHit.getSourceAsMap();
+            JSONObject item = new JSONObject(json);
+            //获取高亮字段
+            Map<String, HighlightField> highlightFields = searchHit.getHighlightFields();
+            HighlightField contentField = highlightFields.get("content");
+            if (contentField != null) {
+                Text[] fragments = contentField.fragments();
+                String content = "";
+                for (Text text : fragments) {
+                    content += text;
+                }
+                item.put("content", content);
             }
-            object.remove("highlight");
-            String centStr = content.toString();
-            if (centStr.length() > 199) {
-                centStr = centStr.substring(0, 199) + "...";
-            }
-            object.getJSONObject("_source").put("content", centStr);
+            array.add(item);
         }
-        return array;
+        res.put("data", array);
+        return res;
     }
+
 
 }

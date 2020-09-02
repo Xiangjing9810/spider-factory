@@ -22,18 +22,13 @@ public class ESController {
     @Autowired
     private ElasticsearchService service;
 
-    @PostMapping("/searchById")
-    public JSONObject searchData(@RequestBody SearchParam searchParam) {
-        return service.getDataById(searchParam);
-    }
-
     @PostMapping("/getDataList")
-    public JSONArray getDataList(@RequestBody SearchParam searchParam) {
+    public JSONObject getDataList(@RequestBody SearchParam searchParam) throws IOException {
         return service.getDataList(searchParam);
     }
 
     @PostMapping("/search")
-    public JSONArray search(@RequestBody SearchParam searchParam) {
+    public JSONObject search(@RequestBody SearchParam searchParam) throws IOException {
         if ("".equals(searchParam.getContent())) {
             return service.getDataList(searchParam);
         } else {
